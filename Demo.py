@@ -24,7 +24,7 @@ arch = ao.Arch(arch_i="[1, 1, 1, 1, 1, 1, 1, 1]", arch_z="[1, 1, 1, 1, 1]", api_
 print(arch.api_status)
 
 # Create an agent with the given architecture
-agent = ao.Agent(arch, uid="Test10")
+agent = ao.Agent(arch, uid="Test11")
 
 # Training examples:
 # Format: [Deactivated or No LinkedIn, Zero GitHub or Personal Projects Listed, Buzzword Soup for Skills, 
@@ -66,8 +66,8 @@ training_data = [
 
 # Train the agent with the examples
 ###Uncomment to train the agent
-for inp, label in training_data:
-    agent.next_state(INPUT=inp, LABEL=label, unsequenced=True)  # Reset states and unsequenced True
+# for inp, label in training_data:
+#     agent.next_state(INPUT=inp, LABEL=label, unsequenced=True)  # Reset states and unsequenced True
 
 
 resume = """
@@ -143,14 +143,14 @@ response= ast.literal_eval(llm_call(f"""I am attching a resume to this chat.Fill
 #          Generic Role Descriptions, Inconsistent or Shady Company Info, Job Titles Don’t Match Timeline, 
 #          Too Many Freelance Projects with No Clients Named, Resume Format Looks AI-Generated or Translated] {resume} 
                        """))
-print("response: ", response)
+print("chatgpt response: ", response)
 print(type(response))
 
 agent_response = agent.next_state(response)
-
+print("agent response: ", agent_response)
 
 ones = sum(agent_response)
 
-print("Predicted likelihood of fraud: ", ones / len(response) * 100, "%")
+print("Predicted likelihood of fraud: ", ones / len(agent_response) * 100, "%")
 
 
