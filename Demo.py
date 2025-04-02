@@ -139,7 +139,7 @@ Resume Format: Appears to be auto-generated and translated, with generic role de
 
 """
 input_to_agent = []
-response= ast.literal_eval(llm_call(f"""I am attching a resume to this chat.Fill out this list with 1 OR 0 of length 8 Then return the list only .Format: [Zero GitHub or Personal Projects Listed, Buzzword Soup for Skills, 
+response= ast.literal_eval(llm_call(f"""I am attching a resume to this chat.Fill out this list with 1 OR 0 of length 7 Then return the list only .Format: [Zero GitHub or Personal Projects Listed, Buzzword Soup for Skills, 
 #          Generic Role Descriptions, Inconsistent or Shady Company Info, Job Titles Don’t Match Timeline, 
 #          Too Many Freelance Projects with No Clients Named, Resume Format Looks AI-Generated or Translated] {resume} 
                        """))
@@ -160,4 +160,8 @@ ones = sum(agent_response)
 
 print("Predicted likelihood of fraud: ", ones / len(agent_response) * 100, "%")
 
-
+res = input("Was this fraud: ")
+if res == "Y":
+    agent.next_state(input_to_agent, [1, 1, 1, 1, 1])
+else:
+    agent.next_state(input_to_agent, [0,0,0,0,0])
