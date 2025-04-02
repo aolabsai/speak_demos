@@ -24,7 +24,7 @@ arch = ao.Arch(arch_i="[1, 1, 1, 1, 1, 1, 1, 1]", arch_z="[1, 1, 1, 1, 1]", api_
 print(arch.api_status)
 
 # Create an agent with the given architecture
-agent = ao.Agent(arch, uid="Test11")
+agent = ao.Agent(arch, uid="Test12")
 
 # Training examples:
 # Format: [Deactivated or No LinkedIn, Zero GitHub or Personal Projects Listed, Buzzword Soup for Skills, 
@@ -69,7 +69,7 @@ training_data = [
 # for inp, label in training_data:
 #     agent.next_state(INPUT=inp, LABEL=label, unsequenced=True)  # Reset states and unsequenced True
 
-
+linkedin = [0]    # linkedin not active, extract from api
 resume = """
 John Doe
 1234 Example Lane
@@ -138,15 +138,22 @@ GitHub/Projects: No personal GitHub account or project repositories available.
 Resume Format: Appears to be auto-generated and translated, with generic role descriptions and inconsistent information.
 
 """
-input_to_agent = [0, 0 ,0 ,0 , 0, 0, 0, 0]
-response= ast.literal_eval(llm_call(f"""I am attching a resume to this chat.Fill out this list with 1 OR 0 of length 8 Then return the list only .Format: [Deactivated or No LinkedIn, Zero GitHub or Personal Projects Listed, Buzzword Soup for Skills, 
+input_to_agent = []
+response= ast.literal_eval(llm_call(f"""I am attching a resume to this chat.Fill out this list with 1 OR 0 of length 8 Then return the list only .Format: [Zero GitHub or Personal Projects Listed, Buzzword Soup for Skills, 
 #          Generic Role Descriptions, Inconsistent or Shady Company Info, Job Titles Don’t Match Timeline, 
 #          Too Many Freelance Projects with No Clients Named, Resume Format Looks AI-Generated or Translated] {resume} 
                        """))
+
+
 print("chatgpt response: ", response)
 print(type(response))
 
-agent_response = agent.next_state(response)
+input_to_agent.append(linkedin[0])
+input_to_agent.extend(bit for i, bit in enumerate(response))
+
+print("input to agent: ", input_to_agent)
+
+agent_response = agent.next_state(input_to_agent)
 print("agent response: ", agent_response)
 
 ones = sum(agent_response)
