@@ -1,12 +1,12 @@
-import ao_pyth as ao
-from config import ao_apikey
-from config import openai_key
-from openai import OpenAI
-
 import ast
+import ao_core as ao
+from config import ao_apikey
+from config import openai_apikey
+from openai import OpenAI
 
 
 def llm_call(input_message): #llm call method 
+    client = OpenAI(api_key = openai_apikey)
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",  
         messages=[
@@ -17,16 +17,19 @@ def llm_call(input_message): #llm call method
     local_response = response.choices[0].message.content
     return local_response
 
-client = OpenAI(api_key = openai_key)
-# Initialize architecture with 8 input neurons, 4 hidden neurons, 5 output neurons. 
-# The 5 output neurons correspond to the likelihood of fraud (scale 1-5)
+
+# Initialize AO agent architecture with 8 input neurons, 8 hidden neurons (by default), 5 output neurons. 
+# The 5 output neurons correspond to the likelihood of fraud (scale 1-5).
 arch = ao.Arch(arch_i="[1, 1, 1, 1, 1, 1, 1, 1]", arch_z="[1, 1, 1, 1, 1]", api_key=ao_apikey, kennel_id="Speak_demo") 
 print(arch.api_status)
 
-# Create an agent with the given architecture
-agent = ao.Agent(arch, uid="Test12")
 
-# Training examples:
+# Create an agent with the given architecture
+agent = ao.Agent(arch, uid="Test12", save_meta=True)
+agent.api_reset_compatibility = True # to enable similar behavior in local core with reset states as ao_python when running cross-compatible scripts
+
+
+# Setting a baseline by pre-training example patterns that are known to be fraudulent. 
 # Format: [Deactivated or No LinkedIn, Zero GitHub or Personal Projects Listed, Buzzword Soup for Skills, 
 #          Generic Role Descriptions, Inconsistent or Shady Company Info, Job Titles Don’t Match Timeline, 
 #          Too Many Freelance Projects with No Clients Named, Resume Format Looks AI-Generated or Translated]
@@ -63,12 +66,12 @@ training_data = [
     # Lowest fraud likelihood
     ([0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0])
 ]
-
-# Train the agent with the examples
 ###Uncomment to train the agent
-# for inp, label in training_data:
-#     agent.next_state(INPUT=inp, LABEL=label, unsequenced=True)  # Reset states and unsequenced True
+for inp, label in training_data:
+    agent.next_state(INPUT=inp, LABEL=label, unsequenced=True)  # Reset states and unsequenced True
 
+
+# Input to the agent
 linkedin = [0]    # linkedin not active, extract from api
 resume = """
 John Doe
@@ -138,30 +141,32 @@ GitHub/Projects: No personal GitHub account or project repositories available.
 Resume Format: Appears to be auto-generated and translated, with generic role descriptions and inconsistent information.
 
 """
-input_to_agent = []
-response= ast.literal_eval(llm_call(f"""I am attching a resume to this chat.Fill out this list with 1 OR 0 of length 7 Then return the list only .Format: [Zero GitHub or Personal Projects Listed, Buzzword Soup for Skills, 
+# Extracting features for input (using an LLM here - we can use other APIs)
+response= ast.literal_eval(llm_call(f"""I am attaching a resume to this chat.Fill out this list with 1 OR 0 of length 7 Then return the list only .Format: [Zero GitHub or Personal Projects Listed, Buzzword Soup for Skills, 
 #          Generic Role Descriptions, Inconsistent or Shady Company Info, Job Titles Don’t Match Timeline, 
 #          Too Many Freelance Projects with No Clients Named, Resume Format Looks AI-Generated or Translated] {resume} 
                        """))
-
-
-print("chatgpt response: ", response)
+print("LLM response: ", response)
 print(type(response))
 
+
+# Changing input to binary for our system (we don't need the raw data; you keep the encoding)
+input_to_agent = []
 input_to_agent.append(linkedin[0])
 input_to_agent.extend(bit for i, bit in enumerate(response))
-
 print("input to agent: ", input_to_agent)
 
+
+# Predicting the likelihood of fraud based on the input
 agent_response = agent.next_state(input_to_agent)
 print("agent response: ", agent_response)
-
 ones = sum(agent_response)
-
 print("Predicted likelihood of fraud: ", ones / len(agent_response) * 100, "%")
 
-res = input("Was this fraud: ")
+
+# Closing the Learning Loop - passing feedback to the system to drive learning
+res = input("Closing the Learning Loop-- was this input-pattern actually fraud (Y or N)?  ")
 if res == "Y":
     agent.next_state(input_to_agent, [1, 1, 1, 1, 1])
 else:
-    agent.next_state(input_to_agent, [0,0,0,0,0])
+    agent.next_state(input_to_agent, [0, 0, 0, 0, 0])
