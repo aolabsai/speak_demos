@@ -1,172 +1,135 @@
+# Python standard libraries
 import ast
-import ao_core as ao
-from config import ao_apikey
-from config import openai_apikey
-from openai import OpenAI
+
+# Third-party libraries
+import requests
+import numpy as np
+
+# AO library
+# import ao_pyth as ao # $ pip install ao_pyth - https://pypi.org/project/ao-pyth/
+import ao_core as ao # private package, to run our code locally, useful for advanced debugging; ao_pyth is enough for most use cases
 
 
-def llm_call(input_message): #llm call method 
-    client = OpenAI(api_key = openai_apikey)
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",  
-        messages=[
-            {"role": "user", "content": input_message}
-        ],
-        temperature=0.1
-    )
-    local_response = response.choices[0].message.content
-    return local_response
+# Importing API keys
+from config import ao_apikey, openai_apikey
 
 
-# Initialize AO agent architecture with 8 input neurons, 8 hidden neurons (by default), 5 output neurons. 
-# The 5 output neurons correspond to the likelihood of fraud (scale 1-5).
-arch = ao.Arch(arch_i="[1, 1, 1, 1, 1, 1, 1, 1]", arch_z="[1, 1, 1, 1, 1]", api_key=ao_apikey, kennel_id="Speak_demo") 
-print(arch.api_status)
 
 
-# Create an agent with the given architecture
-agent = ao.Agent(arch, uid="Test12", save_meta=True)
-agent.api_reset_compatibility = True # to enable similar behavior in local core with reset states as ao_python when running cross-compatible scripts
+                                    # ----------- Helper Functions -----------#
 
 
-# Setting a baseline by pre-training example patterns that are known to be fraudulent. 
-# Format: [Deactivated or No LinkedIn, Zero GitHub or Personal Projects Listed, Buzzword Soup for Skills, 
-#          Generic Role Descriptions, Inconsistent or Shady Company Info, Job Titles Don’t Match Timeline, 
-#          Too Many Freelance Projects with No Clients Named, Resume Format Looks AI-Generated or Translated]
-# -> Likelihood of fraud (scale 1-5)
+def convert_to_binary(input_to_agent_scaled, scale=10):
+    input_to_agent = []
+    if type(scale) == list:
+        s=0
+        for i in input_to_agent_scaled:
+            likelihood = np.zeros(scale[s], dtype=int)
+            s+=1
+            likelihood[0:i] = 1
+            input_to_agent += likelihood.tolist()
+    else:
+        for i in input_to_agent_scaled:
+            likelihood = np.zeros(scale, dtype=int)
+            likelihood[0:i] = 1
+    return input_to_agent
+
+
+
+
+                                    # ----------- Initialize AO Agent -----------#
+
+testing_data = [1, 0, 1, 4, 0, 0]
+
+# Name - is there any pattern here to be learned? Might not be relevant.
+
+# Email - 6 neurons - Speak TODO  if/then that validations to categorize if it looks like a fraudulent email or not this should be easy
+    # if not pingable/reachable: 1
+    # if has numbers: 1
+    # if has more than one special characters: 1
+    # if domain not in set(.com, .org, .net, .edu): 3
+    # if domain not in set(<defined by speak>): 
+
+# Title - 6 neurons
+    # if level not in set(intern, junior, senior, vice president ... <up to 8 levels>): 3  - each level is a binary id, eg: none"000", intern="001", junior="010", senior="100", vice president="111"
+    # if function not in set(software engineer, data scientist, project manager ... <up to 8 functions>): 3  - each function is a binary id, eg: none="000", software engineer="001", data scientist="010", project manager="100", vice president="111"
+
+# LinkedIn presence - 2 neurons
+    # if LinkedIn not is included: 1
+    # if LinkedIn not is valid: 1   Speak TODO - LinkedIn <> is LinkedIn valid? E.g. 200 vs a 404 HTTP -network responses, you’ll need to ping LinkedIn and store the yes or no response 200=yes, 404=no
+
+# Phone number - 4 neurons
+    # if phone number country code does not matches candidate country location: 1
+    # if phone number is not valid: 1   Speak TODO setup some if/then that validations, like with the email
+    # if phone number is not reachable: 1
+    # if phone number is Google voice or other internet number: 1
+
+# Company they are applying to - 1 neuron
+    # if name in application is not actual company name: 1
+
+# Job by they are applying to - 2 neurons
+    # if level not in job applied to: 1
+    # if function not in job applied to: 1
+
+
+# Maybe include school?
+# Maybe 
+
+
+
+# Initialize AO agent architecture, here with 30 input neurons and 5 output neurons. 
+# Input consists of 3 features, each given on a intensity (or other) scale of 0-10 (10 neurons for each feature):
+# Output consists of 5 neurons corresponding to a single scale of 1-5 (or whatever output(s) you want to associate with input).
+
+arch = ao.Arch(arch_i="[6, 6, 2, 4, 1, 2]", arch_z="[10]", api_key=ao_apikey, kennel_id="Speak_demo") # --> architecture setup
+agent = ao.Agent(arch, uid="Speak's client company X", save_meta=True)  # --> agent creation
+
+agent.api_reset_compatibility = True
+
+
+
+                                    # ----------- Pre-train with Baseline Examples -----------#
+
+# Optional - Use this to train the agent on a baseline (if the agent has no prior training, it would output random;
+# if it only has 1 label/training event, it can only ever output that until trained on more examples)
+
 training_data = [
-    # Highest fraud likelihood
-    ([1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1]),
-    # Very high fraud likelihood with one minor flag missing
-    ([1, 1, 1, 1, 1, 1, 0, 1], [1, 1, 1, 1, 0]),
-    # High fraud likelihood with one less flag
-    ([1, 1, 1, 0, 1, 1, 1, 1], [1, 1, 1, 1, 0]),
-    # High fraud likelihood with a couple of flags off
-    ([1, 1, 0, 1, 1, 1, 1, 1], [1, 1, 1, 0, 1]),
-    # Moderately high fraud likelihood
-    ([1, 0, 1, 1, 1, 1, 1, 0], [1, 1, 1, 0, 0]),
-    # Medium fraud likelihood
-    ([1, 1, 0, 0, 1, 1, 0, 1], [1, 1, 0, 0, 1]),
-    # Medium fraud likelihood with balanced flags
-    ([1, 0, 1, 0, 1, 0, 1, 1], [1, 0, 1, 0, 1]),
-    # Medium-low fraud likelihood
-    ([0, 1, 1, 0, 1, 0, 0, 1], [0, 1, 1, 0, 0]),
-    # Medium-low fraud likelihood with few red flags
-    ([0, 1, 0, 1, 0, 1, 0, 0], [0, 1, 0, 1, 0]),
-    # Lower fraud likelihood with more zeros
-    ([1, 0, 0, 1, 0, 0, 0, 1], [1, 0, 0, 1, 0]),
-    # Lower fraud likelihood with minimal flags
-    ([0, 0, 1, 0, 0, 1, 0, 0], [0, 0, 1, 0, 0]),
-    # Low fraud likelihood
-    ([1, 0, 0, 0, 1, 0, 0, 0], [0, 1, 0, 0, 0]),
-    # Very low fraud likelihood with only one flag on
-    ([0, 0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 1]),
-    # Nearly no fraud indicators
-    ([0, 0, 0, 1, 0, 0, 0, 0], [0, 0, 0, 1, 0]),
-    # Lowest fraud likelihood
-    ([0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0])
+    [[6, 6, 2, 4, 1, 2], [10]],     # Highest fraud likelihood
+    [[0, 0, 0, 0, 0, 0], [0]]      # Lowest fraud likelihood
 ]
-###Uncomment to train the agent
 for inp, label in training_data:
-    agent.next_state(INPUT=inp, LABEL=label, unsequenced=True)  # Reset states and unsequenced True
+    inp = convert_to_binary(inp, scale=[6, 6, 2, 4, 1, 2])
+    label = convert_to_binary(label, scale=5)
+    agent.next_state(INPUT=inp, LABEL=label, unsequenced=True)  # unsequenced is default; you can set it to `False` to run on data that is sequential
 
 
-# Input to the agent
-linkedin = [0]    # linkedin not active, extract from api
-resume = """
-John Doe
-1234 Example Lane
-Anytown, USA 12345
-(555) 123-4567
-john.doe@example.com
-
-Objective
-Innovative and dynamic professional with a passion for delivering value through synergy and holistic solutions. Seeking opportunities to leverage expertise in diverse roles and drive transformative results.
-
-Experience
-
-Freelance Consultant
-Various Projects
-June 2018 – Present
-
-Delivered end-to-end consulting services across multiple industries using agile frameworks.
-
-Developed cutting-edge solutions and implemented next-generation technologies.
-
-Managed several freelance projects without publicly listed client names.
-
-Senior Project Manager
-XYZ Corporation
-January 2017 – May 2018
-
-Led cross-functional teams in the delivery of enterprise-scale projects.
-
-Focused on innovative strategies and dynamic process optimization.
-
-Oversaw global initiatives with a mix of inconsistent role descriptions and timelines.
-
-Software Engineer
-ABC Innovations
-March 2015 – December 2016
-
-Designed and implemented robust software solutions with buzzword-heavy technical jargon.
-
-Engaged in iterative development practices and integrated scalable architectures.
-
-Project roles and job titles did not consistently align with the provided timelines.
-
-Education
-
-Bachelor of Science in Computer Science
-University of Nowhere, 2011 – 2015
-
-Skills
-
-Proficient in Python, Java, and C++
-
-Expertise in agile methodologies, cloud computing, and data analytics
-
-Strong ability to drive innovation and optimize system performance
-
-Certifications
-
-Certified Agile Professional
-
-Additional Information
-
-LinkedIn: Profile is deactivated.
-
-GitHub/Projects: No personal GitHub account or project repositories available.
-
-Resume Format: Appears to be auto-generated and translated, with generic role descriptions and inconsistent information.
-
-"""
-# Extracting features for input (using an LLM here - we can use other APIs)
-response= ast.literal_eval(llm_call(f"""I am attaching a resume to this chat.Fill out this list with 1 OR 0 of length 7 Then return the list only .Format: [Zero GitHub or Personal Projects Listed, Buzzword Soup for Skills, 
-#          Generic Role Descriptions, Inconsistent or Shady Company Info, Job Titles Don’t Match Timeline, 
-#          Too Many Freelance Projects with No Clients Named, Resume Format Looks AI-Generated or Translated] {resume} 
-                       """))
-print("LLM response: ", response)
-print(type(response))
 
 
-# Changing input to binary for our system (we don't need the raw data; you keep the encoding)
-input_to_agent = []
-input_to_agent.append(linkedin[0])
-input_to_agent.extend(bit for i, bit in enumerate(response))
-print("input to agent: ", input_to_agent)
+
+                                    # ----------- Inference on Content (using YouTube as an example) -----------#
+
+testing_data = [1, 0, 1, 4, 0, 0]  # new candidate with this set of inputs, AO system will predict % fraud
+
+# converting input to binary
+input_to_agent = convert_to_binary(testing_data, scale=[6, 6, 2, 4, 1, 2])
+
+# # Initial prediction, predicting the likelihood of infringement based on the binary input
+agent_response = agent.next_state(input_to_agent, unsequenced=True)
+print("Agent raw binary response: ", agent_response)
+print("Response percentage: ", sum(agent_response) / len(agent_response) * 100, "%")
 
 
-# Predicting the likelihood of fraud based on the input
-agent_response = agent.next_state(input_to_agent)
-print("agent response: ", agent_response)
-ones = sum(agent_response)
-print("Predicted likelihood of fraud: ", ones / len(agent_response) * 100, "%")
 
+                                    # ----------- Feedback Loop -----------#
 
-# Closing the Learning Loop - passing feedback to the system to drive learning
-res = input("Closing the Learning Loop-- was this input-pattern actually fraud (Y or N)?  ")
+# Closing the Learning Loop - passing feedback to the system to drive learning positively or negatively
+res = input("Closing the Learning Loop-- was this input-pattern actually infringement (Y or N)?  ")
 if res == "Y":
-    agent.next_state(input_to_agent, [1, 1, 1, 1, 1])
+    agent.next_state(input_to_agent, LABEL=[1,1,1,1,1,1,1,1,1,1], unsequenced=True)
 else:
-    agent.next_state(input_to_agent, [0, 0, 0, 0, 0])
+    agent.next_state(input_to_agent, LABEL=[0,0,0,0,0,0,0,0,0,0], unsequenced=True)
+
+# Re-evaluate After Feedback. To verify the learning, predict infringement again on the SAME input-pattern
+agent_response = agent.next_state(input_to_agent, unsequenced=True)
+print("Agent raw binary response: ", agent_response)
+print("AFTER LEARNING LOOP, response percentage: ", sum(agent_response) / len(agent_response) * 100, "%")
