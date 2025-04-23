@@ -6,12 +6,12 @@ import requests
 import numpy as np
 
 # AO library
-# import ao_pyth as ao # $ pip install ao_pyth - https://pypi.org/project/ao-pyth/
-import ao_core as ao # private package, to run our code locally, useful for advanced debugging; ao_pyth is enough for most use cases
+import ao_pyth as ao # $ pip install ao_pyth - https://pypi.org/project/ao-pyth/
+# import ao_core as ao # private package, to run our code locally, useful for advanced debugging; ao_pyth is enough for most use cases
 
 
 # Importing API keys
-from config import ao_apikey, openai_apikey
+from config import ao_apikey
 
 
 
