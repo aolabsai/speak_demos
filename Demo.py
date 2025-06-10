@@ -1,135 +1,185 @@
-# Python standard libraries
-import ast
-
-# Third-party libraries
-import requests
-import numpy as np
-
-# AO library
 import ao_pyth as ao # $ pip install ao_pyth - https://pypi.org/project/ao-pyth/
-# import ao_core as ao # private package, to run our code locally, useful for advanced debugging; ao_pyth is enough for most use cases
-
-
-# Importing API keys
 from config import ao_apikey
 
 
+# The True/False values returned from your LLM prompt need to be changed to binary
+""" + """
+{
+"has_tools_and_clear_tech_stack": "1 if True or 0 if False",
+"has_companies_with_external_footprint": "1 if True or 0 if False",
+"has_clear_responsibilities": "1 if True or 0 if False",
+"has_metrics_and_outcomes": "1 if True or 0 if False",
+"has_valid_email": "1 if True or 0 if False",
+"risk_level": "Risk level input here. Only 1, 2, 3 or 4.",
+"risk_level_explanation": "Risk level explanation input here. For the ema"
+}
 
 
-                                    # ----------- Helper Functions -----------#
+# Extracting communication data (email) - using a 3rd party API
+# https://apilayer.com/marketplace/email_verification-api
+email_apikey = ""
 
+# email = "alebrahim.ali@gmail.com"
+# email = "ali@aolabs.ai"
 
-def convert_to_binary(input_to_agent_scaled, scale=10):
-    input_to_agent = []
-    if type(scale) == list:
-        s=0
-        for i in input_to_agent_scaled:
-            likelihood = np.zeros(scale[s], dtype=int)
-            s+=1
-            likelihood[0:i] = 1
-            input_to_agent += likelihood.tolist()
+def getCommEmail(applicant_info, email="ali@aolabs.ai"):
+
+    import requests
+    
+    url = f"http://apilayer.net/api/check?access_key={email_apikey}&email={email}&smtp=1&format=1"
+    response = requests.get(url)
+    data = response.json()
+
+    # changing data to binary, storing it all in applicant_info dictionary
+
+    if data.get("mx_found", False) and data.get("smtp_check", False):
+        applicant_info["email_valid"] = 1
     else:
-        for i in input_to_agent_scaled:
-            likelihood = np.zeros(scale, dtype=int)
-            likelihood[0:i] = 1
-    return input_to_agent
+        applicant_info["email_valid"] = 0
+
+    if data.get("disposable", False):
+        applicant_info["email_disposable"] = 1
+    else:
+        applicant_info["email_disposable"] = 0
+
+    if data.get("free", False):
+        applicant_info["email_free"] = 1
+    else:
+        applicant_info["email_free"] = 0
+
+    score = data.get("score", 0.0)
+
+    if score < 0.3:
+        applicant_info["email_score"] = "00"
+    elif score < 0.6:
+        applicant_info["email_score"] = "01"
+    else:
+        applicant_info["email_score"] = "11"
 
 
+    return applicant_info
+
+
+# # Extracting social data (linkedin) input - using a 3rd party api
+# # https://rapidapi.com/freshdata-freshdata-default/api/fresh-linkedin-profile-data/playground
+
+# # li_url = "https://www.linkedin.com/in/alebrahimali/"
+
+# def getSocialLinkedin(applicant_info, li_url="https://www.linkedin.com/in/alebrahimali/"):
+
+#     if li_url == "":
+#         li_url = applicant_info["linkedin_url"]
+
+#     url = "https://fresh-linkedin-profile-data.p.rapidapi.com/get-linkedin-profile"
+
+#     querystring = {"linkedin_url":li_url,"include_skills":"false","include_certifications":"false","include_publications":"false","include_honors":"false","include_volunteers":"false","include_projects":"false","include_patents":"false","include_courses":"false","include_organizations":"false","include_profile_status":"false","include_company_public_url":"false"}
+
+#     headers = {
+#         "x-rapidapi-key": rapid_apikey,
+#         "x-rapidapi-host": "fresh-linkedin-profile-data.p.rapidapi.com"
+#     }
+
+#     li_data = requests.get(url, headers=headers, params=querystring)
+
+#     applicant_info["linkedin_exists"] = "0"
+#     applicant_info["linkedin_following"] = "0000"
+#     applicant_info["linkedin_is_creator"] = "0"
+#     applicant_info["linkedin_is_influencer"] = "0"
+#     applicant_info["linkedin_is_premium"] = "0"
+#     applicant_info["linkedin_is_verified"] = "0"
+
+
+#     if li_data.status_code != 200:
+#         print("LinkedIn profile not reachable, unable to verify.")
+        
+#     else:
+#         li_data = li_data.json()["data"]
+    
+#         applicant_info["linkedin_exists"] = "1"
+
+#         base_following = 100
+#         if li_data["follower_count"] < base_following / 3:
+#             applicant_info["linkedin_following"] = "0000"
+#         elif li_data["follower_count"] >= base_following / 3 and li_data["follower_count"] < base_following / 3 * 2:
+#             applicant_info["linkedin_following"] = "1100"
+#         elif li_data["follower_count"] >= base_following / 3 * 2:
+#             applicant_info["linkedin_following"] = "1110"
+#         elif li_data["follower_count"] > base_following:
+#             applicant_info["linkedin_following"] = "1111"
+
+#         if li_data["is_creator"]:
+#             applicant_info["linkedin_is_creator"] = "1"
+
+#         if li_data["is_influencer"]:
+#             applicant_info["linkedin_is_influencer"] = "1"
+
+#         if li_data["is_premium"]:
+#             applicant_info["linkedin_is_premium"] = "1"
+
+#         if li_data["is_verified"]:
+#             applicant_info["linkedin_is_verified"] = "1"
+
+#     return applicant_info
+
+
+
+# Combing all data (semantic, communication, social) in binary as INPUT to learning loop
+
+def getAOAgentInput(applicant_info):
+
+    agent_input= list(
+        str(applicant_info["has_tools_and_clear_tech_stack"])+
+        str(applicant_info["has_companies_with_external_footprint"])+
+        str(applicant_info["has_clear_responsibilities"])+
+        str(applicant_info["has_metrics_and_outcomes"])+
+        # str(applicant_info["linkedin_exists"])+
+        # str(applicant_info["linkedin_following"])+
+        # str(applicant_info["linkedin_is_creator"])+
+        # str(applicant_info["linkedin_is_influencer"])+
+        # str(applicant_info["linkedin_is_premium"])+
+        # str(applicant_info["linkedin_is_verified"])+
+        str(applicant_info["email_valid"])+
+        str(applicant_info["email_disposable"])+
+        str(applicant_info["email_free"])+
+        str(applicant_info["email_score"])
+    )
+
+    agent_input = list("".join(agent_input))
+
+    return agent_input
 
 
                                     # ----------- Initialize AO Agent -----------#
 
-testing_data = [1, 0, 1, 4, 0, 0]
-
-# Name - is there any pattern here to be learned? Might not be relevant.
-
-# Email - 6 neurons - Speak TODO  if/then that validations to categorize if it looks like a fraudulent email or not this should be easy
-    # if not pingable/reachable: 1
-    # if has numbers: 1
-    # if has more than one special characters: 1
-    # if domain not in set(.com, .org, .net, .edu): 3
-    # if domain not in set(<defined by speak>): 
-
-# Title - 6 neurons
-    # if level not in set(intern, junior, senior, vice president ... <up to 8 levels>): 3  - each level is a binary id, eg: none"000", intern="001", junior="010", senior="100", vice president="111"
-    # if function not in set(software engineer, data scientist, project manager ... <up to 8 functions>): 3  - each function is a binary id, eg: none="000", software engineer="001", data scientist="010", project manager="100", vice president="111"
-
-# LinkedIn presence - 2 neurons
-    # if LinkedIn not is included: 1
-    # if LinkedIn not is valid: 1   Speak TODO - LinkedIn <> is LinkedIn valid? E.g. 200 vs a 404 HTTP -network responses, you’ll need to ping LinkedIn and store the yes or no response 200=yes, 404=no
-
-# Phone number - 4 neurons
-    # if phone number country code does not matches candidate country location: 1
-    # if phone number is not valid: 1   Speak TODO setup some if/then that validations, like with the email
-    # if phone number is not reachable: 1
-    # if phone number is Google voice or other internet number: 1
-
-# Company they are applying to - 1 neuron
-    # if name in application is not actual company name: 1
-
-# Job by they are applying to - 2 neurons
-    # if level not in job applied to: 1
-    # if function not in job applied to: 1
-
-
-# Maybe include school?
-# Maybe 
-
-
-
-# Initialize AO agent architecture, here with 30 input neurons and 5 output neurons. 
-# Input consists of 3 features, each given on a intensity (or other) scale of 0-10 (10 neurons for each feature):
+# Initialize AO agent architecture, here with 28 input neurons and 5 output neurons.
 # Output consists of 5 neurons corresponding to a single scale of 1-5 (or whatever output(s) you want to associate with input).
 
-arch = ao.Arch(arch_i="[6, 6, 2, 4, 1, 2]", arch_z="[10]", api_key=ao_apikey, kennel_id="Speak_demo") # --> architecture setup
-agent = ao.Agent(arch, uid="Speak's client company X", save_meta=True)  # --> agent creation
+# agent_size = [len(agent_input)]
+agent_size = [9]
 
-agent.api_reset_compatibility = True
+arch = ao.Arch(arch_i=agent_size, arch_z=[10], api_key=api_key, kennel_id="Speak_demo_01") # --> architecture setup
 
-
-
-                                    # ----------- Pre-train with Baseline Examples -----------#
-
-# Optional - Use this to train the agent on a baseline (if the agent has no prior training, it would output random;
-# if it only has 1 label/training event, it can only ever output that until trained on more examples)
-
-training_data = [
-    [[6, 6, 2, 4, 1, 2], [10]],     # Highest fraud likelihood
-    [[0, 0, 0, 0, 0, 0], [0]]      # Lowest fraud likelihood
-]
-for inp, label in training_data:
-    inp = convert_to_binary(inp, scale=[6, 6, 2, 4, 1, 2])
-    label = convert_to_binary(label, scale=5)
-    agent.next_state(INPUT=inp, LABEL=label, unsequenced=True)  # unsequenced is default; you can set it to `False` to run on data that is sequential
+uid="Speak Dev 0" # change this variable name for each Speak user, to made a separate model for each user
+agent = ao.Agent(arch, uid="Speak Dev 0")  # --> agent creation
 
 
-
-
-
-                                    # ----------- Inference on Content (using YouTube as an example) -----------#
-
-testing_data = [1, 0, 1, 4, 0, 0]  # new candidate with this set of inputs, AO system will predict % fraud
-
-# converting input to binary
-input_to_agent = convert_to_binary(testing_data, scale=[6, 6, 2, 4, 1, 2])
+                                    # ----------- Inference on Candidate (to get fraud %) -----------#
 
 # # Initial prediction, predicting the likelihood of infringement based on the binary input
-agent_response = agent.next_state(input_to_agent, unsequenced=True)
-print("Agent raw binary response: ", agent_response)
-print("Response percentage: ", sum(agent_response) / len(agent_response) * 100, "%")
+
+test_input = "110101010" # test input of 9 binary digits
+test_input = [0,0,0,0,0,0,0,0,0] # can also be a list
+
+agent_response = agent.next_state(test_input, unsequenced=True)
+agent_response_percentage = sum(agent_response) / len(agent_response) * 100
 
 
+                                    # ----------- Training on Candidate -----------#
 
-                                    # ----------- Feedback Loop -----------#
+train_input = "110101010" # 0% fraud
 
-# Closing the Learning Loop - passing feedback to the system to drive learning positively or negatively
-res = input("Closing the Learning Loop-- was this input-pattern actually infringement (Y or N)?  ")
-if res == "Y":
-    agent.next_state(input_to_agent, LABEL=[1,1,1,1,1,1,1,1,1,1], unsequenced=True)
-else:
-    agent.next_state(input_to_agent, LABEL=[0,0,0,0,0,0,0,0,0,0], unsequenced=True)
+train_label = "0000000000" # 0% fraud
+train_label = "1111111111" # 100% fraud
 
-# Re-evaluate After Feedback. To verify the learning, predict infringement again on the SAME input-pattern
-agent_response = agent.next_state(input_to_agent, unsequenced=True)
-print("Agent raw binary response: ", agent_response)
-print("AFTER LEARNING LOOP, response percentage: ", sum(agent_response) / len(agent_response) * 100, "%")
+# # Initial prediction, predicting the likelihood of infringement based on the binary input
+agent.next_state(train_input, LABEL=train_label, unsequenced=True)
