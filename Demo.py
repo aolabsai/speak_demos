@@ -157,7 +157,7 @@ def getAOAgentInput(applicant_info):
 # agent_size = [len(agent_input)]
 agent_size = [9]
 
-arch = ao.Arch(arch_i=agent_size, arch_z=[10], api_key=api_key, kennel_id="Speak_demo_01") # --> architecture setup
+arch = ao.Arch(arch_i=agent_size, arch_z=[10], api_key=api_key, email="gustavo@speak.ai", kennel_id="Speak_demo_01") # --> architecture setup
 
 uid="Speak Dev 0" # change this variable name for each Speak user, to made a separate model for each user
 agent = ao.Agent(arch, uid="Speak Dev 0")  # --> agent creation
